@@ -1,347 +1,233 @@
-let size = 100;
-let block_size=8;
-let matrix = Array(size).fill().map(() => Array(size).fill(0));
-let global_step = 0;
+class Empty { }
 
-function rand_elem(items){
-    return items[Math.floor(Math.random()*items.length)];
+// Grass starts with a random energy between 0 and 2.
+// It gains 1 energy every frame.
+// When it reaches 7 energy, it creates a new grass object
+// in an empty neighbour cell and resets its energy to 0.
+class Grass {
+    constructor() {
+        this.stepCount = frameCount + 1;
+        this.color = "green";
+        this.energy = int(random(0, 3));
+    }
+
+    step() {
+        this.stepCount++;
+        this.energy++;
+        if (this.energy >= 7) {
+            this.multiply();
+            this.energy = 0;
+        }
+    }
+
+    multiply() {
+        let emptyFields = findNeighbourPositions(this.row, this.col, 1, Empty);
+        if (emptyFields.length > 0) {
+            let randomEmptyField = random(emptyFields);
+            let row = randomEmptyField[0];
+            let col = randomEmptyField[1];
+            matrix[row][col] = new Grass();
+        }
+    }
 }
 
+// GrassEater looks for grass in its neighbour cells.
+// If it finds grass, it moves to that cell, eats the grass and gains 1 energy.
+// If it doesn't find grass, it moves to a random empty neighbour cell and loses 1 energy.
+// If it has 10 energy, it creates a new grass eater object in an empty neighbour cell
+// and loses 5 energy.
+// If it has 0 energy, it dies and becomes an empty cell.
+class GrassEater {
+    constructor() {
+        this.stepCount = frameCount + 1;
+        this.color = "yellow";
+        this.energy = 5;
+    }
+
+    eat() {
+        let grassFields = findNeighbourPositions(this.row, this.col, 1, Grass);
+        if (grassFields.length > 0) {
+            let randomGrassField = random(grassFields);
+            updateCreaturePosition(this, randomGrassField);
+            this.energy++;
+        } else {
+            let emptyFields = findNeighbourPositions(this.row, this.col, 1, Empty);
+            if (emptyFields.length > 0) {
+                let randomEmptyField = random(emptyFields);
+                updateCreaturePosition(this, randomEmptyField);
+            }
+            this.energy--;
+        }
+    }
+
+    multiply() {
+        let freeFields = findNeighbourPositions(this.row, this.col, 1, Empty);
+        if (freeFields.length > 0) {
+            let randomFreeField = random(freeFields);
+            let row = randomFreeField[0];
+            let col = randomFreeField[1];
+            matrix[row][col] = new GrassEater();
+        }
+    }
+
+    step() {
+        this.stepCount++;
+        this.eat();
+        if (this.energy >= 10) {
+            this.multiply();
+            this.energy -= 5;
+        } else if (this.energy <= 0) {
+            matrix[this.row][this.col] = new Empty();
+        }
+    }
+}
+
+// MeatEater looks for grass eater in its neighbour cells.
+// If it finds grass eater, it moves to that cell, eats the grass eater and gains 10 energy.
+// If it doesn't find grass eater, it loses 1 energy.
+// If it has 120 energy, it creates a new meat eater object in an empty neighbour cell
+// and loses 100 energy.
+class MeatEater {
+    constructor() {
+        this.stepCount = frameCount + 1;
+        this.color = "red";
+        this.energy = 100;
+    }
+
+    eat() {
+        let grassEaterFields = findNeighbourPositions(this.row, this.col, 1, GrassEater);
+        if (grassEaterFields.length > 0) {
+            let randomGrassEaterField = random(grassEaterFields);
+            updateCreaturePosition(this, randomGrassEaterField);
+            this.energy += 10;
+        } else {
+            this.energy--;
+        }
+    }
+
+    multiply() {
+        let emptyFields = findNeighbourPositions(this.row, this.col, 1, Empty);
+        if (emptyFields.length > 0) {
+            let randomEmptyField = random(emptyFields);
+            let row = randomEmptyField[0];
+            let col = randomEmptyField[1];
+            matrix[row][col] = new MeatEater();
+        }
+    }
+
+    step() {
+        this.stepCount++;
+        this.eat()
+        if (this.energy >= 120) {
+            this.multiply();
+            this.energy -= 100;
+        } else if (this.energy <= 0) {
+            matrix[this.row][this.col] = new Empty();
+        }
+    }
+}
+
+// list of lists. Contains all creatures.
+let matrix = [];
+// size of the matrix, how many cells in width and height
+let size = 50;
+// display size in pixels of each cell
+let blockSize = 15;
+
+// What probability each creature has to be created
+let creatureAmounts = [
+    [Grass, 0.25],
+    [GrassEater, 0.05],
+    [MeatEater, 0.02],
+];
+
+// Choose a random creature based on the probabilities
+function getRandomCreature() {
+    let rand = random();
+    let sum = 0;
+    for (let [creatureCLass, propability] of creatureAmounts) {
+        sum += propability;
+        if (rand < sum) {
+            return creatureCLass;
+        }
+    }
+    return Empty;
+}
+
+// randomly fill the matrix with creatures based on the probabilities
+function fillRandomMatrix() {
+    for (let row = 0; row < size; row++) {
+        matrix.push([]);
+        for (let col = 0; col < size; col++) {
+            let creatureCLass = getRandomCreature();
+            matrix[row][col] = new creatureCLass();
+        }
+    }
+}
+
+
+// update the position of a creature in the matrix
+// Creates a new empty object in the old position
+function updateCreaturePosition(creature, newPos) {
+    let [newRow, newCol] = newPos;
+    matrix[newRow][newCol] = creature;
+    matrix[creature.row][creature.col] = new Empty();
+    creature.row = newRow;
+    creature.col = newCol;
+}
+
+
+// for a given position, find all neighbour positions contain a certain
+// creature type and are within a certain distance
+// returns a list of [row, col] positions
+// example: findNeighbourPositions(10, 10, 1, Empty) will return all empty cells
+// around position 10, 10 within a distance of 1. If all cells are empty, it will return
+// [[9, 9], [9, 10], [9, 11], [10, 9], [10, 11], [11, 9], [11, 10], [11, 11]]
+function findNeighbourPositions(row, col, distance, creatureType) {
+    let positions = [];
+    for (let nCol = col - distance; nCol <= col + distance; nCol++) {
+        for (let nRow = row - distance; nRow <= row + distance; nRow++) {
+            if (nCol >= 0 && nCol < size && nRow >= 0 && nRow < size && matrix[nRow][nCol] instanceof creatureType) {
+                positions.push([nRow, nCol]);
+            }
+        }
+    }
+    return positions;
+}
+
+// setup the canvas and fill the matrix with creatures
+// Will be called once at the start
 function setup() {
-  createCanvas(size*block_size, size*block_size);
-  
-  let rand_fill = (x,y,_) => {
-    if (Math.random()>0.7) matrix[x][y] = new Grass();
-    else if (Math.random()>0.9) matrix[x][y] = new Grazer();
-    else if (Math.random()>0.9) matrix[x][y] = new GreenGrass();
-    else if (Math.random()>0.99) matrix[x][y] = new Tyrant();
-    else if (Math.random()>0.98) matrix[x][y] = new Meat();
-    else if (Math.random()>0.999) matrix[x][y] = new Hunter();
-  }
-  iter_matrix(rand_fill);
-  matrix[int(size/2)][int(size/2)] = new Bulldozer();
-  frameRate(30);
-  
-  // drawing the outline results in a huge performance drop
-  //strokeWeight(.5)
-  noStroke();
+    createCanvas(size * blockSize, size * blockSize);
+    fillRandomMatrix();
+    noStroke();
+    frameRate(30);
 }
 
-
+// game loop. This will be called every frame
+// It will draw the matrix and update the creatures
 function draw() {
-  
-  let step_func=(x, y, o)=>{
-    if (o instanceof GridObject && o.step_count==global_step)o.step(x, y);
-  }
-  iter_matrix(step_func);
-  
-  let draw_mat = (x, y, obj)=>{
-    x = int(x)
-    y = int(y)
-    c = "white"
-    if (obj instanceof Grass) c = "green";
-    else if (obj instanceof GreenGrass) c = "lightgreen";
-    else if (obj instanceof Grazer) c = "yellow";
-    else if (obj instanceof Tyrant) c = "red";
-    else if (obj instanceof Meat) c = "blue";
-    else if (obj instanceof Hunter) c = "orange";
-    else if (obj instanceof Bulldozer) c = "black";
-    fill(c);
-    if (!(obj instanceof Hunter)){
-      rect(x*block_size, y*block_size, block_size, block_size);
-    }else{
-      circle((x+.5)*block_size, (y+.5)*block_size, block_size*3);
+    background(200)
+    for (let row = 0; row < size; row++) {
+        for (let col = 0; col < size; col++) {
+            let obj = matrix[row][col];
+
+            // skip empty cells
+            if (obj instanceof Empty) continue;
+
+            // set the row and col of the creature
+            obj.row = row;
+            obj.col = col;
+
+            // draw the creature
+            fill(obj.color);
+            rect(blockSize * obj.col, blockSize * obj.row, blockSize, blockSize);
+
+            // this prevents newly created creatures from being updated in the same step
+            // and creatures that move from being updated multiple times in one frame
+            if (obj.stepCount === frameCount) {
+                obj.step();
+            }
+        }
     }
-    
-  }
-  iter_matrix(draw_mat)
-  global_step++;
 }
-
-
-class GridObject{
-  constructor(){
-    this.age=0;
-    this.step_count=global_step+1;
-  }
-  step(x, y){
-    this.age++;
-    let neighbours = get_neighbours(x,y);
-    if (this instanceof Meat || this instanceof Hunter || this instanceof Bulldozer){
-      n = get_neighbours_far(x,y);
-    }
-    let elems = neighbours.map((x) => [x, matrix[x[0]][x[1]]]);
-    this.child_step(x, y, elems)
-    this.step_count++;
-  }
-}
-
-class Grass extends GridObject{
-  child_step(x, y, elems){
-    if (this.age >= 6){
-      elems = elems.filter((x)=> x[1]===0 || x[1] instanceof GreenGrass);
-      if (elems.length>0){
-        c = rand_elem(elems)[0];
-        matrix[c[0]][c[1]] = new Grass();
-        this.age=0;
-      }
-    }
-  }
-}
-
-class GreenGrass extends GridObject{
-  child_step(x, y, elems){
-    if (this.age >= 2){
-      elems = elems.filter((x)=> x[1]===0);
-      if (elems.length>0){
-        c = rand_elem(elems)[0];
-        matrix[c[0]][c[1]] = new GreenGrass();
-        this.age=0;
-      }
-    }
-  }
-}
-
-class Grazer extends GridObject{
-  constructor(){
-    super()
-    this.food=5;
-  }
-  child_step(x, y, elems){
-    let grass_elems = elems.filter((x)=> (x[1] instanceof Grass || x[1] instanceof GreenGrass));
-    if (grass_elems.length>0){
-      let g = rand_elem(grass_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food++;
-    }else{
-      this.food--;
-    }
-    
-    if (this.food >= 10){
-      let spawn_elems = elems.filter((x)=> (x[1] === 0) || (x[1] instanceof Grass)|| x[1] instanceof GreenGrass);
-      if (spawn_elems.length>0){
-        let c = rand_elem(spawn_elems)[0];
-        matrix[c[0]][c[1]] = new Grazer();
-        this.food-=5;
-      }
-    }else if (this.food<=0){
-      matrix[x][y] = 0;
-    }
-  }
-}
-
-class Tyrant extends GridObject{
-  constructor(){
-    super()
-    this.food=50;
-  }
-  child_step(x, y, elems){
-    let grazer_elems = elems.filter((x)=> (x[1] instanceof Grazer || x[1] instanceof Meat));
-    let other_elems = elems.filter((x)=> !(x[1] instanceof Tyrant || x[1] instanceof Bulldozer || x[1] instanceof Hunter));
-
-    if (grazer_elems.length>0){
-      let g = rand_elem(grazer_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food+=10;
-    }else if(other_elems.length>0 && Math.random()<.1){
-      let g = rand_elem(other_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food--;
-    }else{
-      this.food--;
-    }
-    
-    if (this.food >= 100){
-      let spawn_elems = elems.filter((x)=> !(x[1] instanceof Tyrant || x[1] instanceof Bulldozer));
-      if (spawn_elems.length>0){
-        let c = rand_elem(spawn_elems)[0];
-        matrix[c[0]][c[1]] = new Tyrant();
-        this.food-=50;
-      }
-    }else if (this.food<=0){
-      matrix[x][y] = 0;
-    }
-  }
-}
-
-class Meat extends GridObject{
-  constructor(){
-    super()
-    this.food=40;
-  }
-  child_step(x, y, elems){
-    let grazer_elems = elems.filter((x)=> (x[1] instanceof Grazer));
-    let other_elems = elems.filter((x)=> (x[1] instanceof GreenGrass || x[1] == 0));
-
-    if (grazer_elems.length>0){
-      let g = rand_elem(grazer_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food+=5;
-    }else if (other_elems.length>0){
-      let g = rand_elem(other_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food--;
-    }else{
-      this.food--;
-    }
-    
-    if (this.food >= 60){
-      let spawn_elems = elems.filter((x)=> !(x[1] instanceof Tyrant || x[1] instanceof Bulldozer));
-      if (spawn_elems.length>0){
-        let c = rand_elem(spawn_elems)[0];
-        matrix[c[0]][c[1]] = new Meat();
-        this.food-=20;
-      }
-    }else if (this.food<=0){
-      matrix[x][y] = 0;
-    }
-  }
-}
-
-class Hunter extends GridObject{
-  constructor(){
-    super()
-    this.food=200;
-  }
-  child_step(x, y, elems){
-    let grazer_elems = elems.filter((x)=> (x[1] instanceof Tyrant || x[1] instanceof Meat || x[1] instanceof Hunter));
-    let other_elems = elems.filter((x)=> !(x[1] instanceof Hunter || x[1] instanceof Bulldozer));
-
-    if (grazer_elems.length>0){
-      let g = rand_elem(grazer_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food+=30;
-    }else if(other_elems.length>0){
-      let g = rand_elem(other_elems)[0];
-      matrix[g[0]][g[1]] = this;
-      matrix[x][y] = 0;
-      x = g[0];
-      y = g[1];
-      this.food--;
-    }else{
-      this.food--;
-    }
-    
-    if (this.food >= 600){
-      let spawn_elems = elems.filter((x)=> !(x[1] instanceof Tyrant || x[1] instanceof Bulldozer));
-      if (spawn_elems.length>0){
-        let c = rand_elem(spawn_elems)[0];
-        matrix[c[0]][c[1]] = new Hunter();
-        this.food-=400;
-      }
-    }else if (this.food<=0){
-      matrix[x][y] = 0;
-    }
-  }
-}
-
-class Bulldozer extends GridObject{
-  constructor(){
-    super()
-    this.food=400;
-    this.setSpeed();
-  }
-  
-  setSpeed(){
-    this.xspeed=int(Math.random()*4-2)
-    this.yspeed=int(Math.random()*4-2)
-    if (this.xspeed==0 && this.yspeed==0)this.setSpeed();
-  }
-  
-  child_step(x, y, elems){
-    x = int(x)
-    y = int(y)
-    this.food-=2;
-    for (let elem of elems){
-      let e = elem[0];
-      if (matrix[e[0]][e[1]]!=0){
-        this.food+=1;
-      }
-      matrix[e[0]][e[1]] = 0;
-    }
-    if (Math.random()>.99)this.setSpeed();
-    
-    if (Math.random()>.4){
-      let new_x = x + this.xspeed;
-      let new_y = y + this.yspeed;
-      if (new_x<0) {
-        new_x=1;
-        this.xspeed *=-1;
-      }
-      if (new_x >= size){
-        new_x=size-2;
-        this.xspeed *=-1;
-      }
-      if (new_y<0) {
-        new_y=1;
-        this.yspeed *=-1;
-      }
-      if (new_y >= size){
-        new_y=size-2;
-        this.yspeed *=-1;
-      }
-      matrix[new_x][new_y] = this;
-      matrix[x][y] = 0;
-      x = new_x;
-      y = new_y;
-    }  
-    
-    
-    if (this.food >= 1000){
-      if (elems.length>0){
-        let c = rand_elem(elems)[0];
-        matrix[c[0]][c[1]] = new Bulldozer();
-        this.food-=600;
-      }
-    }else if (this.food<=0){
-      //matrix[x][y] = 0;
-    }
-  }
-  
-}
-
-
-
-function iter_matrix(func){
-  for (let row in matrix){
-    for (let col in matrix[row]){
-      let obj = matrix[row][col];
-      func(row, col, obj);
-    }
-  }
-}
-
-function get_neighbours(x,y){
-  x = parseInt(x);
-  y = parseInt(y);
-  let l = [[x-1,y-1], [x, y-1], [x+1, y-1], [x+1, y], [x+1, y+1], [x, y+1], [x-1, y+1], [x-1, y]]
-  l = l.filter((c)=>c[0]>=0&&c[1]>=0&&c[0]<size&&c[1]<size);
-  return l
-}
-
-function get_neighbours_far(x,y){
-  x = parseInt(x);
-  y = parseInt(y);
-  let l = [[x-1,y-1], [x,y-1], [x+1,y-1], [x+1,y], [x+1,y+1], [x,y+1], [x-1,y+1], [x-1,y],[x-2,y-1], [x-2,y], [x-2,y+1], [x-1,y-2], [x-1,y+2], [x,y-2], [x,y+2], [x+1,y-2], [x+1,y+2], [x+2,y-1], [x+2,y], [x+2,y+1], [x-2,y-2], [x+2,y-2], [x+2,y+2], [x-2,y+2]] 
-  l = l.filter((c)=>c[0]>=0&&c[1]>=0&&c[0]<size&&c[1]<size);
-  return l
-}
-
